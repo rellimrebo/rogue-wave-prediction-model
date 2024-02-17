@@ -1,3 +1,4 @@
+!pip install netCDF4
 import netCDF4
 import numpy as np
 import datetime
@@ -5,69 +6,72 @@ import calendar
 
 # Configuration parameters
 stn = '067'
-dataset = 'archive'
 deploy = '17'
-start_date = '05/01/2008 00:00'
-end_date = '05/31/2008 23:59'
+start_date = '05/01/2008 00:00'  # MM/DD/YYYY HH:MM
+duration = 30  # Duration in days
 
-# Helper functions for date conversion
-def get_unix_timestamp(human_time, date_format="%m/%d/%Y %H:%M"):
-    return int(calendar.timegm(datetime.datetime.strptime(human_time, date_format).timetuple()))
+# Convert to unix timestamp
+def get_unix_timestamp(human_time,dateFormat):
+    unix_timestamp = int(calendar.timegm(datetime.datetime.strptime(human_time, dateFormat).timetuple()))
+    return unix_timestamp
 
-def get_human_timestamp(unix_timestamp, date_format="%m/%d/%Y %H:%M:%S"):
-    return datetime.datetime.utcfromtimestamp(int(unix_timestamp)).strftime(date_format)
+# Convert to human readable timestamp
+def get_human_timestamp(unix_timestamp, dateFormat):
+    human_timestamp = datetime.datetime.utcfromtimestamp(int(unix_timestamp)).strftime(dateFormat)
+    return human_timestamp
 
-# Load the dataset
+# Load dataset
 data_url = f'http://thredds.cdip.ucsd.edu/thredds/dodsC/cdip/archive/{stn}p1/{stn}p1_d{deploy}.nc'
 nc = netCDF4.Dataset(data_url)
 nc.set_auto_mask(False)
 
-# Read necessary variables
-waveHs = nc.variables['waveHs'][:]  # Significant wave height
-zdisp = nc.variables['xyzZDisplacement'][:]  # Z-axis displacement
-sampling_rate_hz = nc.variables['xyzSampleRate'][:] # Sample rate for Z-axis displacement
+# Extracting variables
+time_var = nc.variables['waveTime'][:]  # Assuming this is in UNIX timestamp format
+waveHs = nc.variables['waveHs'][:]
+start_time = nc.variables['xyzStartTime'][:].item()
+sample_rate = nc.variables['xyzSampleRate'][:].item()
+WaveHeight = nc.variables['xyzZDisplacement'][:]
+filter_delay = nc.variables['xyzFilterDelay'] 
+end_time = start_time + (len(WaveHeight) / sample_rate)
 
-# Assuming the start and end UNIX timestamps are correctly calculated
-analysis_start_unix = get_unix_timestamp(start_date)
-analysis_end_unix = get_unix_timestamp(end_date)
+# Calculate timestamps for each data point
+data_start = get_human_timestamp(start_time - filter_delay[0],"%m/%d/%Y %H:%M:%S")
+data_end = get_human_timestamp(end_time - filter_delay[0],"%m/%d/%Y %H:%M:%S")
 
-# Calculate the number of seconds per record if each record represents a 30-minute block
-seconds_per_record = 1800  # 30 minutes in seconds
+# Calculate UNIX timestamps for analysis period
+unix_start = get_unix_timestamp(start_date,"%m/%d/%Y %H:%M")
+unix_end = unix_start + (duration * 24 * 60 * 60)  # Convert duration to seconds
 
-# Calculate the total number of records that should be analyzed based on the analysis period
-total_analysis_seconds = analysis_end_unix - analysis_start_unix
-total_records_to_analyze = total_analysis_seconds // seconds_per_record
+# Calculate sub-second sample times
+sample_time = np.arange((start_time - filter_delay[0]), end_time - filter_delay[0],(1/(sample_rate)))
 
-# Adjust the rogue wave detection function to consider only the analysis period
-def find_rogue_waves_within_period(waveHs, zdisp, sampling_rate_hz, analysis_start_unix, total_records_to_analyze):
-    rogue_wave_events = []
-    for i in range(total_records_to_analyze):
-        # Calculate the actual start second for this record based on sampling rate
-        start_sec = i * seconds_per_record * sampling_rate_hz
-        if start_sec >= len(zdisp):
-            break  # Break if we exceed the length of zdisp
-        current_waveHs = waveHs[i]
+# Finding indices for the analysis period
+start_index = np.searchsorted(sample_time, unix_start)
+end_index = np.searchsorted(sample_time, unix_end)
 
-        for sec_offset in range(0, seconds_per_record):
-            sec_index = int(start_sec + sec_offset * sampling_rate_hz)
-            if sec_index >= len(zdisp):
-                break  # Break if we exceed the length of zdisp
-            if zdisp[sec_index] > 2 * current_waveHs:
-                # Convert from seconds offset within analysis period to actual UNIX timestamp
-                event_time_unix = analysis_start_unix + i * seconds_per_record + sec_offset
-                rogue_wave_events.append((get_human_timestamp(event_time_unix, "%m/%d/%Y %H:%M:%S"), current_waveHs, zdisp[sec_index]))
-                break  # Consider first detection within the block and move to the next
-    return rogue_wave_events
+# Filter the data for the specified time range
+filtered_wave_heights = WaveHeight[start_index:end_index]
+filtered_timestamps = sample_time[start_index:end_index]
 
+# Convert 'time_var' to seconds since the start to align with 'filtered_timestamps'
+time_var_seconds = (time_var - time_var[0])
 
-# Use this function to find rogue waves
-rogue_wave_events = find_rogue_waves_within_period(waveHs, zdisp, sampling_rate_hz, analysis_start_unix, total_records_to_analyze)
+# Convert 'filtered_timestamps' to seconds since the start of 'time_var' for direct comparison
+filtered_timestamps_seconds = filtered_timestamps - time_var[0]
 
-# Print detected rogue wave events
-for event in rogue_wave_events:
-    print(f"Rogue wave detected at {event[0]} with significant wave height {event[1]:.2f} m and wave height {event[2]:.2f} m")
+# For each 'filtered_timestamp', find the index of the last 'waveTime' that is less than or equal to it
+# This finds the correct 'waveHs' interval for each high-resolution timestamp
+waveHs_indices = np.searchsorted(time_var_seconds, filtered_timestamps_seconds, side='right') - 1
+waveHs_indices = np.clip(waveHs_indices, 0, len(waveHs) - 1)  # Ensure indices are within bounds
 
+# Comparing each 'WaveHeight' against twice the corresponding 'waveHs'
+is_rogue_wave = filtered_wave_heights > 2 * waveHs[waveHs_indices]
+rogue_timestamps = filtered_timestamps[is_rogue_wave]
+rogue_wave_heights = filtered_wave_heights[is_rogue_wave]
+rogue_waveHs = waveHs[waveHs_indices][is_rogue_wave]
 
+print("Rogue wave events detected within the specified period:")
+for i in range(len(rogue_timestamps)):
+    precise_timestamp = get_human_timestamp(rogue_timestamps[i], "%Y-%m-%d %H:%M:%S")
+    print(f"Rogue wave detected at {precise_timestamp} with significant wave height {rogue_waveHs[i]:.2f} m and wave height {rogue_wave_heights[i]:.2f} m")
 
-
-nc.close()
