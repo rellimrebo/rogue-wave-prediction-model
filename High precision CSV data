@@ -1,0 +1,86 @@
+!pip install netCDF4 pandas
+import netCDF4
+import numpy as np
+import datetime
+import calendar
+import pandas as pd
+
+# Configuration parameters
+stn = '067'
+deploy = '17'
+start_date = '05/01/2008 00:00'  # MM/DD/YYYY HH:MM
+duration = 9  # Duration in days
+
+# Convert to unix timestamp
+def get_unix_timestamp(human_time,dateFormat):
+    unix_timestamp = int(calendar.timegm(datetime.datetime.strptime(human_time, dateFormat).timetuple()))
+    return unix_timestamp
+
+# Convert to human readable timestamp
+def get_human_timestamp(unix_timestamp, dateFormat):
+    human_timestamp = datetime.datetime.utcfromtimestamp(int(unix_timestamp)).strftime(dateFormat)
+    return human_timestamp
+
+# Load dataset
+data_url = f'http://thredds.cdip.ucsd.edu/thredds/dodsC/cdip/archive/{stn}p1/{stn}p1_d{deploy}.nc'
+nc = netCDF4.Dataset(data_url)
+nc.set_auto_mask(False)
+
+# Extracting variables
+time_var = nc.variables['waveTime'][:]  # Assuming this is in UNIX timestamp format
+waveHs = nc.variables['waveHs'][:]
+start_time = nc.variables['xyzStartTime'][:].item()
+sample_rate = nc.variables['xyzSampleRate'][:].item()
+WaveHeight = nc.variables['xyzZDisplacement'][:]
+filter_delay = nc.variables['xyzFilterDelay'][:]
+end_time = start_time + (len(WaveHeight) / sample_rate)
+
+# Calculate UNIX timestamps for analysis period
+unix_start = get_unix_timestamp(start_date, "%m/%d/%Y %H:%M")
+unix_end = unix_start + (duration * 24 * 60 * 60)  # Convert duration to seconds
+
+# Calculate sub-second sample times
+sample_time = np.arange(start_time, end_time, 1 / sample_rate)
+
+# Finding indices for the analysis period
+start_index = np.searchsorted(sample_time, unix_start)
+end_index = np.searchsorted(sample_time, unix_end)
+
+# Filter the data for the specified time range
+filtered_wave_heights = WaveHeight[start_index:end_index]
+filtered_timestamps = sample_time[start_index:end_index]
+
+# Calculate the interval index for each filtered timestamp relative to waveHs
+waveHs_interval_index = np.searchsorted(time_var, filtered_timestamps, side='right') - 1
+waveHs_interval_index = np.clip(waveHs_interval_index, 0, len(waveHs) - 1)
+waveHs_mapped = waveHs[waveHs_interval_index]
+
+# Detecting rogue waves
+is_rogue_wave = filtered_wave_heights > 2 * waveHs[waveHs_interval_index]
+rogue_timestamps = filtered_timestamps[is_rogue_wave]
+rogue_wave_heights = filtered_wave_heights[is_rogue_wave]
+rogue_waveHs = waveHs[waveHs_interval_index][is_rogue_wave]
+
+labels = np.zeros_like(filtered_timestamps, dtype=int)  # Initialize all as non-rogue waves
+
+# Update labels for rogue wave periods based on 'rogue_timestamps'
+for rogue_time in rogue_timestamps:
+    start_period = rogue_time - (25 * 60)  # 25 minutes before the rogue wave
+    end_period = rogue_time + (5 * 60)  # 5 minutes after the rogue wave
+    # Update labels within this period to 1
+    labels[(filtered_timestamps >= start_period) & (filtered_timestamps <= end_period)] = 1
+
+df = pd.DataFrame({
+    'timestamp': filtered_timestamps,
+    'WaveHeight': filtered_wave_heights,
+    'waveHs': waveHs_mapped, 
+    'label': labels
+})
+
+# Convert 'timestamp' to a human-readable format
+df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
+
+# Save to CSV for future use
+df.to_csv('high_res_rogue_wave_data.csv', index=False)
+
+print("DataFrame with high-resolution rogue wave data, including WaveHeight, waveHs, and labels, has been created and saved.")
