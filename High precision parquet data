@@ -1,4 +1,6 @@
 !pip install netCDF4 pandas
+!pip install pyarrow
+!pip install fastparquet
 import netCDF4
 import numpy as np
 import datetime
@@ -9,7 +11,7 @@ import pandas as pd
 stn = '067'
 deploy = '17'
 start_date = '05/01/2008 00:00'  # MM/DD/YYYY HH:MM
-duration = 9  # Duration in days
+duration = 180  # Duration in days
 
 # Convert to unix timestamp
 def get_unix_timestamp(human_time,dateFormat):
@@ -77,10 +79,8 @@ df = pd.DataFrame({
     'label': labels
 })
 
-# Convert 'timestamp' to a human-readable format
-df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
+# Save to Parquet for future use
+parquet_file_path = 'high_res_rogue_wave_data.parquet'
+df.to_parquet(parquet_file_path, index=False)
 
-# Save to CSV for future use
-df.to_csv('high_res_rogue_wave_data.csv', index=False)
-
-print("DataFrame with high-resolution rogue wave data, including WaveHeight, waveHs, and labels, has been created and saved.")
+print(f"DataFrame with high-resolution rogue wave data, including WaveHeight, waveHs, and labels, has been saved to Parquet format at {parquet_file_path}.")
