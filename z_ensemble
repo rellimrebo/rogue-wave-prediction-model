@@ -1,0 +1,46 @@
+import numpy as np
+import os
+import torch
+import pandas as pd
+import matplotlib.pyplot as plt
+import datetime
+
+class one_layer_net(torch.nn.Module):
+  #Initial Constructor
+  def __init__(self, input_size, hidden_neurons, output_size):
+    super(one_layer_net, self).__init__()
+    #hidden layer
+    self.linear_one = torch.nn.Linear(input_size, hidden_neurons)
+    self.linear_two = torch.nn.Linear(hidden_neurons, output_size)
+    #defining layers are attributes
+    self.layer_in = None
+    self.act = None
+    self.layer_out = None
+  #Forward Pass
+  def forward(self,x):
+    self.layer_in = self.linear_one(x)
+    self.act = torch.sigmoid(self.layer_in)
+    self.layer_out = self.linear_two(self.act)
+    y_pred = torch.sigmoid(self.linear_two(self.act))
+    return y_pred
+
+###Model###
+##Multiple Input, 2 Neuron, 1 Hidden Layer NN##
+##7 input, 2 neuron, 1 hidden layer##
+
+#iputs: WDIR, WSPD, WVHT, DPD, APD, MWD
+inputs = 6
+neurons = 2
+hidden_layers = 6
+model = one_layer_net(inputs, neurons, hidden_layers)
+#Use NOAA dataset as our training set to create y_pred
+#Use Cadwell dataset as our y
+
+def criterion(y_pred, y):
+  #log(1-y_pred) goes to infinty REALLY EASILY
+  #Because our y_pred converges too fast to 1
+  #SO OUR CRITERION IS NOT ROBUST
+
+  out =  torch.mean(torch.sum(y-torch.max(y_pred)))
+  return out
+optimizer = torch.optim.SGD(model.parameters(),lr=0.01)
