@@ -15,7 +15,6 @@ stn = '067'
 deploy = '17'
 start_date = '05/01/2008 00:00'  # MM/DD/YYYY HH:MM
 end_date = '05/31/2008 23:59'  # MM/DD/YYYY HH:MM
-sample_rate = 1.28  # Example sample rate in Hz, adjust as needed based on dataset
 qc_level = 2 # Filter data with qc flags above this number 
 
 # Helper functions for timestamp conversion
@@ -36,6 +35,7 @@ time_var = nc.variables['waveTime'][:]  # Assuming this is in UNIX timestamp for
 waveHs = nc.variables['waveHs'][:]
 start_time = nc.variables['xyzStartTime'][:].item()
 WaveHeight = nc.variables['xyzZDisplacement'][:]
+sample_rate = nc.variables['xyzSampleRate'][:].item()
 end_time = start_time + (len(WaveHeight) / sample_rate)
 
 # Calculate UNIX timestamps for analysis period
@@ -115,7 +115,7 @@ def prepare_and_classify_wave_data(df, sample_rate, waveHs_mapped, observation_w
         sigma = window_df['xyzZDisplacement'].std()
         Sy = 4 * np.pi * sigma * np.sqrt(2 * np.log(Nz)) / Tz
 
-        if check_for_spikes(window_df, Sy, sample_rate) or sensor_range_exceeded(window_df):
+        if check_for_spikes(window_df, Sy) or sensor_range_exceeded(window_df):
             df.loc[start_idx:start_idx + observation_window + advance_warning_time, 'class'] = 9  # Mark as failed quality checks
 
     # Ensure the non-rogue wave dataset has the same size as the rogue wave dataset
