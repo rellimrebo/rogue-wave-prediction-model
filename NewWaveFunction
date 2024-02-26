@@ -1,0 +1,142 @@
+!pip install netCDF4 pandas
+!pip install pyarrow
+!pip install fastparquet
+import numpy as np
+import pandas as pd
+import netCDF4
+from scipy.signal import argrelextrema
+import os
+import datetime
+import calendar
+import math
+
+# Configuration parameters and helper functions
+stn = '067'
+deploy = '17'
+start_date = '05/01/2008 00:00'  # MM/DD/YYYY HH:MM
+end_date = '05/31/2008 23:59'  # MM/DD/YYYY HH:MM
+qc_level = 2 # Filter data with qc flags above this number 
+
+# Helper functions for timestamp conversion
+def get_unix_timestamp(human_time, dateFormat):
+    return int(calendar.timegm(datetime.datetime.strptime(human_time, dateFormat).timetuple()))
+
+def get_human_timestamp(unix_timestamp, dateFormat):
+    return datetime.datetime.utcfromtimestamp(int(unix_timestamp)).strftime(dateFormat)
+
+# Load dataset
+data_url = f'http://thredds.cdip.ucsd.edu/thredds/dodsC/cdip/archive/{stn}p1/{stn}p1_d{deploy}.nc'
+nc = netCDF4.Dataset(data_url)
+nc.set_auto_mask(False)
+
+# Extracting variables
+qc_flag = nc.variables['xyzFlagPrimary']
+time_var = nc.variables['waveTime'][:]  # Assuming this is in UNIX timestamp format
+waveHs = nc.variables['waveHs'][:]
+start_time = nc.variables['xyzStartTime'][:].item()
+WaveHeight = nc.variables['xyzZDisplacement'][:]
+sample_rate = nc.variables['xyzSampleRate'][:].item()
+end_time = start_time + (len(WaveHeight) / sample_rate)
+
+# Calculate UNIX timestamps for analysis period
+unix_start = get_unix_timestamp(start_date, "%m/%d/%Y %H:%M")
+unix_end = get_unix_timestamp(end_date, "%m/%d/%Y %H:%M")
+
+# Calculate sub-second sample times and filter the data for the specified time range
+sample_time = np.arange(start_time, end_time, 1 / sample_rate)
+start_index = np.searchsorted(sample_time, unix_start)
+end_index = np.searchsorted(sample_time, unix_end)
+filtered_wave_heights = np.ma.masked_where(qc_flag[start_index:end_index] > qc_level, WaveHeight[start_index:end_index])
+filtered_timestamps = sample_time[start_index:end_index]
+
+# Mapping waveHs to the timestamps
+waveHs_interval_index = np.searchsorted(time_var, filtered_timestamps, side='right') - 1
+waveHs_mapped = waveHs[waveHs_interval_index]
+
+# Data preparation for analysis
+df = pd.DataFrame({
+    'timestamp': filtered_timestamps,
+    'xyzZDisplacement': filtered_wave_heights,
+    'waveHs': waveHs_mapped
+})
+
+# Zero upcrossings, spike detection, and repetitive values check functions
+def calculate_zero_upcrossings(xyzZDisplacement):
+    upcrossings = np.where(np.diff(np.sign(wave_heights)) > 0)[0]
+    if len(upcrossings) > 1:
+        Tz = np.mean(np.diff(upcrossings)) / sample_rate
+        Nz = len(upcrossings)
+    else:
+        Tz = 0
+        Nz = 0
+    return Nz, Tz
+
+def sensor_range_exceeded(window, column_name='xyzZDisplacement', max_range=20.47):
+    # Check if any absolute wave heights exceed the max_range
+    exceeded = (window[column_name].abs() > max_range).any()
+    
+    return exceeded
+  
+def check_for_spikes(window, Sy):
+    rate_of_change = np.abs(np.diff(window['WaveHeight'].values)) / (1 / sample_rate)
+    return np.any(rate_of_change > 2 * Sy)
+
+def check_for_repetitive_values(window):
+    return (window['WaveHeight'].rolling(window=20, min_periods=1).apply(lambda x: x.nunique() == 1)).any()
+
+def prepare_and_classify_wave_data(df, sample_rate, waveHs_mapped, observation_window=20*60, advance_warning_time=5*60):
+    # Find local minima and maxima in z displacement
+    minima_indices = argrelextrema(df['xyzZDisplacement'].values, np.less)[0]
+    maxima_indices = argrelextrema(df['xyzZDisplacement'].values, np.greater)[0]
+
+    df['class'] = 0  # Default classification
+
+    for min_idx in minima_indices:
+        min_val = df.iloc[min_idx]['xyzZDisplacement']
+        # Ensure there's a subsequent positive maximum and the minimum is negative
+        subsequent_max_idx = maxima_indices[maxima_indices > min_idx]
+        if min_val < 0 and len(subsequent_max_idx) > 0:
+            max_idx = subsequent_max_idx[0]
+            max_val = df.iloc[max_idx]['xyzZDisplacement']
+            wave_height = max_val - min_val
+            significant_wave_height = df.iloc[min_idx]['waveHs']
+
+            if wave_height > 2 * significant_wave_height:
+                # Mark the local minimum timestamp as class 1
+                df.at[min_idx, 'class'] = 1
+                # Mark timestamps from after the local minimum to 5-time samples after the local maximum as class 2
+                end_idx = max_idx + 5
+                df.loc[min_idx + 1:end_idx, 'class'] = 2
+
+    # Apply zero upcrossings, spike detection, and repetitive values check for each window
+    for idx, row in df.iterrows():
+        if row['class'] in [1, 2]:
+            window_start = idx - observation_window - advance_warning_time
+            window_end = idx + 5  # Assuming idx is the position of the rogue wave's local minimum
+            window_df = df.loc[window_start:window_end]
+
+            # Calculate zero upcrossings and Sy
+            Nz, Tz = calculate_zero_upcrossings(window_df['xyzZDisplacement'].values)
+            sigma = window_df['xyzZDisplacement'].std()
+            Sy = 4 * np.pi * sigma * np.sqrt(2 * np.log(Nz)) / Tz
+
+            # Perform spike and repetitive value checks
+            if check_for_spikes(window_df, Sy) or check_for_repetitive_values(window_df) or sensor_range_exceeded(window_df, 'WaveHeight', 20.47):
+                df.loc[window_start:window_end, 'class'] = 9  # Set classification to 9 if checks fail
+
+    return df
+
+# Apply the function
+df_prepared_classified = prepare_and_classify_wave_data(df, sample_rate, waveHs_mapped)
+
+# Saving the classified data
+rogue_wave_data = df_prepared_classified[df_prepared_classified['class'] == 1]
+non_rogue_wave_data = df_prepared_classified[df_prepared_classified['class'] == 0]
+
+rogue_wave_file_path = 'rogue_wave_data.parquet'
+non_rogue_wave_file_path = 'non_rogue_wave_data.parquet'
+rogue_wave_data.to_parquet(rogue_wave_file_path)
+non_rogue_wave_data.to_parquet(non_rogue_wave_file_path)
+
+print(f"Rogue wave data saved to {rogue_wave_file_path}.")
+print(f"Non-rogue wave data saved to {non_rogue_wave_file_path}.")
