@@ -87,9 +87,8 @@ def excess_sensor_limit(displacement_data):
 
 def should_discard_block(displacement_data, sample_rate, threshold):
     rate_of_change = np.abs(np.diff(displacement_data)) / (1/sample_rate)
-    print("rate",rate_of_change)
-    print("thresh",threshold)
-    return np.any(rate_of_change > threshold)
+    #print(rate_of_change[rate_of_change > threshold])
+    return np.any(rate_of_change > 1.15*threshold)
 
 def detect_non_rogue_wave(displacement_data, sample_rate, sigma):
 
@@ -102,6 +101,7 @@ def detect_non_rogue_wave(displacement_data, sample_rate, sigma):
     # Discard the block if the threshold is exceeded
     #print(f"{should_discard_block(displacement_data, sample_rate, S_y)} {repetitive_value_checking(displacement_data)} {excess_sensor_limit(displacement_data)}")
     if should_discard_block(displacement_data, sample_rate, S_y) or repetitive_value_checking(displacement_data) or excess_sensor_limit(displacement_data):
+    #if repetitive_value_checking(displacement_data) or excess_sensor_limit(displacement_data):
         # print("Measurement discarded due to exceeding the rate of change threshold or repetitive)
         
         return None
@@ -145,7 +145,7 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
         print(f"Breaking out of: {station}_{deployment}")
         return non_rogue_blocks  # Return empty list or handle accordingly
 
-    while_stop = 0
+    hard_deck = 0
     while len(non_rogue_blocks) < total_target_blocks:
         start_index = random.randint(0, len(displacement_data) - num_samples_for_30_min)
         end_index = start_index + num_samples_for_30_min
@@ -155,9 +155,9 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
             if len(non_rogue_blocks) == total_target_blocks:
                 break
         else:
-            while_stop += 1
+            hard_deck += 1
             #print(detect_non_rogue_wave(segment, sample_rate, sigma))
-        if while_stop >= 100000:
+        if hard_deck >= 10000000:
             print(f"while loop Hard Deck REACHED, Breaking out of: {station}_{deployment}")
             break
 
@@ -188,7 +188,6 @@ def main():
         if skip_station and deployment == 1:
             skip_station = False
         if station == target_station and not skip_station:  # Target specific station
-            print(station)
             start_date = datetime.strptime(row['Start date'], '%m-%d-%Y %H:%M')
             end_date = datetime.strptime(row['End date'], '%m-%d-%Y %H:%M')
             non_rogue_blocks = process_deployment(station, deployment, start_date, end_date, total_target_blocks, sample_rate)
