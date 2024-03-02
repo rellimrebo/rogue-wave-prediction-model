@@ -27,7 +27,7 @@ def get_displacement_data(station, deployment, start_date, end_date):
     
     # Construct the file path for the netCDF file based on station and formatted deployment
     data_url = f'http://thredds.cdip.ucsd.edu/thredds/dodsC/cdip/archive/{station}p1/{station}p1_d{deployment_str}.nc'
-    print("gathering data")
+    #print("gathering data")
     
     # Open the netCDF file using netCDF4.Dataset
     with netCDF4.Dataset(data_url) as nc:
@@ -50,7 +50,7 @@ def get_displacement_data(station, deployment, start_date, end_date):
         # Filter out data that does not meet the QC level
         displacement_data = np.ma.masked_where(qc_data > 2, displacement_data).compressed()
         
-        print("got data")
+        print(f"Station {station}_{deployment}: Data obtained @", datetime.now().strftime("%H:%M:%S"))
         return displacement_data
 
 
@@ -81,7 +81,7 @@ def calculate_zero_upcrossings(displacement_data, sample_rate):
     return len(zero_crossings), zero_crossings, np.mean(np.diff(zero_crossings)) / sample_rate if len(zero_crossings) > 1 else 0
 
 def repetitive_value_checking(displacement_data):
-    print("repetitive_value_checking")
+    #print("repetitive_value_checking")
     for i in range(len(displacement_data) - 10 + 1):
         if all(np.abs(displacement_data[i:i+10]) > 20.47):
             return True  # Indicates repetitive values exceeding threshold found
@@ -106,8 +106,10 @@ def detect_non_rogue_wave(displacement_data, sample_rate, sigma):
 
     #print("checking if need to discard block")
     # Discard the block if the threshold is exceeded
+    print(f"{should_discard_block(displacement_data, sample_rate, S_y)} {repetitive_value_checking(displacement_data)} {excess_sensor_limit(displacement_data)}")
     if should_discard_block(displacement_data, sample_rate, S_y) or repetitive_value_checking(displacement_data) or excess_sensor_limit(displacement_data):
         # print("Measurement discarded due to exceeding the rate of change threshold or repetitive)
+        
         return None
 
     # Calculate the significant wave height (Hs)
@@ -146,6 +148,7 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
     # Verify there's enough data for at least one 30-minute segment
     if len(displacement_data) < num_samples_for_30_min:
         print(f"Not enough data for a 30-minute segment. Only {len(displacement_data)} samples are available.")
+        print(f"Breaking out of: {station}_{deployment}")
         return non_rogue_blocks  # Return empty list or handle accordingly
 
     while_stop = 0
@@ -159,7 +162,8 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
                 break
         else:
             while_stop += 1
-        if while_stop >= 1000:
+            #print(detect_non_rogue_wave(segment, sample_rate, sigma))
+        if while_stop >= 10000:
             print(f"while loop Hard Deck REACHED, Breaking out of: {station}_{deployment}")
             break
 
@@ -171,7 +175,7 @@ def main():
     #file_path = r"data\non_rogue_HB\rogue_wave_data_station_214_new"
     non_rogue_wave_data_list = []
     target_station = 214
-    target_station_index = 1 #initialize based on row of bouy_distribution.csv
+    target_station_index = 14 #initialize based on row of bouy_distribution.csv
     total_target_blocks = 0 #initialize based on bouy_distribution.csv
     sample_rate = 1.28  # Sample rate in Hz
     skip_station = False
@@ -179,8 +183,7 @@ def main():
     #print(bouy_distribution.iloc[2,0])
     #print(bouy_distribution[0])
 
-    ## Assume Start data collect from scratch
-    '''
+    ### AUTO MODE
     for _, row in deployment_info.iterrows():
         station = row['Station']
         deployment = row['Deployment']
@@ -220,6 +223,9 @@ def main():
 
     print('Processing completed.')
     print(datetime.now())
+    
+
+    ### MANUAL MODE
     '''
     target_station = 143
     total_target_blocks = 573
@@ -253,6 +259,7 @@ def main():
                 break
 
     print('Processing completed.')
+    '''
         
 
 if __name__ == "__main__":
