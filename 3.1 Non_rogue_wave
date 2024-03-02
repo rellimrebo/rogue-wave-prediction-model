@@ -1,3 +1,4 @@
+
 !pip install netCDF4 pandas
 !pip install pyarrow
 !pip install fastparquet
@@ -12,6 +13,7 @@ from random import randint
 import time
 import pandas as pd
 import pyarrow.parquet as pq
+from pathlib import Path
 
 qc_level = 2
 
@@ -142,27 +144,38 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
     return non_rogue_blocks
 
 def main():
-    deployment_info = pd.read_csv('/content/station_deployment_info.csv')  # Ensure correct file path
-    non_rogue_wave_data_list = []
-    total_target_blocks = 573
+    deployment_info = pd.read_csv('/content/station_deployment_info.csv')  
+    file_path = '147_non_rogue_wave_data.parquet'
+    total_target_blocks = 323
     sample_rate = 1.28  # Sample rate in Hz
 
     for _, row in deployment_info.iterrows():
         station = row['Station']
         deployment = row['Deployment']
-        
-        if station == 143:  # Ensure we are looking at the correct station
+
+        if station == 147:  # Target specific station
             start_date = datetime.strptime(row['Start date'], '%m-%d-%Y %H:%M')
             end_date = datetime.strptime(row['End date'], '%m-%d-%Y %H:%M')
-            
             non_rogue_blocks = process_deployment(station, deployment, start_date, end_date, total_target_blocks, sample_rate)
-            non_rogue_wave_data_list.extend(non_rogue_blocks)
-            
-            if len(non_rogue_wave_data_list) >= total_target_blocks:
+
+            # Check if the parquet file already exists
+            if Path(file_path).exists():
+                # Read the existing data
+                existing_data = pd.read_parquet(file_path)
+                # Append new data
+                new_data = pd.DataFrame({'NonRogueWaveSegments': non_rogue_blocks})
+                appended_data = pd.concat([existing_data, new_data], ignore_index=True)
+                # Save the appended data
+                appended_data.to_parquet(file_path, index=False)
+            else:
+                # If the file does not exist, just save the new data
+                new_data = pd.DataFrame({'NonRogueWaveSegments': non_rogue_blocks})
+                new_data.to_parquet(file_path, index=False)
+
+            # Check if we have reached the target number of blocks
+            if len(non_rogue_blocks) >= total_target_blocks:
                 break
 
-    non_rogue_wave_data = pd.DataFrame({'NonRogueWaveSegments': non_rogue_wave_data_list})
-    non_rogue_wave_data.to_parquet('143_non_rogue_wave_data.parquet')  
     print('Processing completed.')
 
 if __name__ == "__main__":
