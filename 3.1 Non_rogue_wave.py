@@ -104,10 +104,9 @@ def detect_non_rogue_wave(displacement_data, sample_rate, sigma):
         return None
     S_y = (4 * sigma / T_z) * np.sqrt(2 * np.log(N_z))
 
-    print("checking if need to discard block")
+    #print("checking if need to discard block")
     # Discard the block if the threshold is exceeded
     if should_discard_block(displacement_data, sample_rate, S_y) or repetitive_value_checking(displacement_data) or excess_sensor_limit(displacement_data):
-    #if should_discard_block(displacement_data, sample_rate, S_y) or excess_sensor_limit(displacement_data):
         # print("Measurement discarded due to exceeding the rate of change threshold or repetitive)
         return None
 
@@ -153,6 +152,7 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
         start_index = random.randint(0, len(displacement_data) - num_samples_for_30_min)
         end_index = start_index + num_samples_for_30_min
         segment = displacement_data[start_index:end_index]
+        print(segment[0])
         if detect_non_rogue_wave(segment, sample_rate, sigma):
             non_rogue_blocks.append(segment.tolist())  # Convert to list for memory efficiency
             print(len(non_rogue_blocks))
