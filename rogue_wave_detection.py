@@ -194,6 +194,15 @@ for index, row in stations_df.iloc[16:,:2].iterrows():
     deployment = row.iloc[1]
     deployment = f"{deployment:02}"
 
+    # Check if the station has changed
+    if last_station is not None and station != last_station:
+        # Append rogue wave data to the Parquet file
+        file_name = f'rogue_wave_data_station_{last_station}.parquet'
+        rogue_wave_data.to_parquet(file_name)
+        # Clear rogue_wave_data DataFrame for the next station
+        rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment', 'SamplingRate', 'Segment'])
+    last_station = station
+
     # DEBUG INPUT
     # station = '143'
     # deployment = '04'
@@ -286,14 +295,6 @@ for index, row in stations_df.iloc[16:,:2].iterrows():
             }
             rogue_wave_data = rogue_wave_data.append(new_row, ignore_index = True)
 
-    # Check if the station has changed
-    if last_station is not None and station != last_station:
-        # Append rogue wave data to the Parquet file
-        file_name = f'rogue_wave_data_station_{last_station}.parquet'
-        rogue_wave_data.to_parquet(file_name)
-        # Clear rogue_wave_data DataFrame for the next station
-        rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment', 'SamplingRate', 'Segment'])
-    last_station = station
 
     # print(f"{rogue_count} rogue waves detected")
     print(f"Finished processing station {station} deployment {deployment}")

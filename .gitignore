@@ -2,3 +2,5 @@
 /z_test.py
 /trash
 /Rogue Wave Data
+*.ipynb
+*.parquet

@@ -189,7 +189,7 @@ last_station = None
 
 start_time = time.time()
 # main loop
-for index, row in stations_df.iloc[16:,:2].iterrows():
+for index, row in stations_df.iloc[68:,:2].iterrows():
     station = row.iloc[0]
     station = f"{station}"
     deployment = row.iloc[1]
@@ -300,7 +300,7 @@ for index, row in stations_df.iloc[16:,:2].iterrows():
     print(f"Finished processing station {station} deployment {deployment}")
     print("--- %s seconds ---" % (time.time() - start_time))
 
-print("Saving to File")
-file_name = f'data/non_rogue/non_rogue_wave_data_station_{last_station}.parquet'
-rogue_wave_data.to_parquet(file_name)
-print('Processing completed.')
+    print("Saving to File")
+    file_name = f'data/non_rogue/non_rogue_wave_data_station_{last_station}_{deployment}.parquet'
+    rogue_wave_data.to_parquet(file_name)
+    print('Processing completed.')
