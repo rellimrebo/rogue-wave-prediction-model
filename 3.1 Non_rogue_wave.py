@@ -114,16 +114,16 @@ def detect_non_rogue_wave(displacement_data, sample_rate, sigma):
     Hs = 4 * sigma
 
     # Calculate the troughs and crests in the window
-    print("calculate measurements")
+    #print("calculate measurements")
     troughs, crests = find_troughs_and_crests(displacement_data)
     wave_heights_info = calculate_wave_heights(displacement_data, troughs, crests)
 
     # Verify all wave heights in the window are less than 2 * Hs
     #print("finished finding rogue waves!")
     for trough, crest, height in wave_heights_info:
-        print("checking height")
+        #print("checking height")
         if height >= 2 * Hs:
-            print("found rogue")
+            #print("found rogue")
             return False  # Window contains wave height >= 2 * Hs, not non-rogue
 
     # If we get here, all wave heights in the window are less than 2 * Hs
@@ -148,16 +148,20 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
         print(f"Not enough data for a 30-minute segment. Only {len(displacement_data)} samples are available.")
         return non_rogue_blocks  # Return empty list or handle accordingly
 
+    while_stop = 0
     while len(non_rogue_blocks) < total_target_blocks:
         start_index = random.randint(0, len(displacement_data) - num_samples_for_30_min)
         end_index = start_index + num_samples_for_30_min
         segment = displacement_data[start_index:end_index]
-        print(segment[0])
         if detect_non_rogue_wave(segment, sample_rate, sigma):
             non_rogue_blocks.append(segment.tolist())  # Convert to list for memory efficiency
-            print(len(non_rogue_blocks))
             if len(non_rogue_blocks) == total_target_blocks:
                 break
+        else:
+            while_stop += 1
+        if while_stop >= 1000:
+            print(f"while loop Hard Deck REACHED, Breaking out of: {station}_{deployment}")
+            break
 
     return non_rogue_blocks
 
