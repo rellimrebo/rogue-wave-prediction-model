@@ -27,7 +27,6 @@ def get_displacement_data(station, deployment, start_date, end_date):
     
     # Construct the file path for the netCDF file based on station and formatted deployment
     data_url = f'http://thredds.cdip.ucsd.edu/thredds/dodsC/cdip/archive/{station}p1/{station}p1_d{deployment_str}.nc'
-    #print("gathering data")
     
     # Open the netCDF file using netCDF4.Dataset
     with netCDF4.Dataset(data_url) as nc:
@@ -55,18 +54,15 @@ def get_displacement_data(station, deployment, start_date, end_date):
 
 
 def find_troughs_and_crests(displacement_data):
-    #print("finding max min")
     crests, _ = find_peaks(displacement_data)
     troughs, _ = find_peaks(-displacement_data)
     return troughs, crests
 
 def find_nearest_trough(troughs, crest):
-    #print("finding nearest min")
     preceding_troughs = troughs[troughs < crest]
     return preceding_troughs.max() if preceding_troughs.size > 0 else None
 
 def calculate_wave_heights(displacement_data, troughs, crests):
-    #print("finding max")
     wave_heights = []
     for crest in crests:
         nearest_trough = find_nearest_trough(troughs, crest)
@@ -76,25 +72,23 @@ def calculate_wave_heights(displacement_data, troughs, crests):
     return wave_heights
 
 def calculate_zero_upcrossings(displacement_data, sample_rate):
-    #print("calculating zero upcrossings")
     zero_crossings = np.where(np.diff(np.sign(displacement_data)) > 0)[0]
     return len(zero_crossings), zero_crossings, np.mean(np.diff(zero_crossings)) / sample_rate if len(zero_crossings) > 1 else 0
 
 def repetitive_value_checking(displacement_data):
-    #print("repetitive_value_checking")
     for i in range(len(displacement_data) - 10 + 1):
         if all(np.abs(displacement_data[i:i+10]) > 20.47):
             return True  # Indicates repetitive values exceeding threshold found
     return None
 
 def excess_sensor_limit(displacement_data):
-    #print("correct sensors")
     if np.any(np.abs(displacement_data) > 20.47):
         return None
 
 def should_discard_block(displacement_data, sample_rate, threshold):
-    #print("discarding blocks")
     rate_of_change = np.abs(np.diff(displacement_data)) / (1/sample_rate)
+    print("rate",rate_of_change)
+    print("thresh",threshold)
     return np.any(rate_of_change > threshold)
 
 def detect_non_rogue_wave(displacement_data, sample_rate, sigma):
@@ -106,7 +100,7 @@ def detect_non_rogue_wave(displacement_data, sample_rate, sigma):
 
     #print("checking if need to discard block")
     # Discard the block if the threshold is exceeded
-    print(f"{should_discard_block(displacement_data, sample_rate, S_y)} {repetitive_value_checking(displacement_data)} {excess_sensor_limit(displacement_data)}")
+    #print(f"{should_discard_block(displacement_data, sample_rate, S_y)} {repetitive_value_checking(displacement_data)} {excess_sensor_limit(displacement_data)}")
     if should_discard_block(displacement_data, sample_rate, S_y) or repetitive_value_checking(displacement_data) or excess_sensor_limit(displacement_data):
         # print("Measurement discarded due to exceeding the rate of change threshold or repetitive)
         
@@ -163,7 +157,7 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
         else:
             while_stop += 1
             #print(detect_non_rogue_wave(segment, sample_rate, sigma))
-        if while_stop >= 10000:
+        if while_stop >= 100000:
             print(f"while loop Hard Deck REACHED, Breaking out of: {station}_{deployment}")
             break
 
@@ -175,7 +169,7 @@ def main():
     #file_path = r"data\non_rogue_HB\rogue_wave_data_station_214_new"
     non_rogue_wave_data_list = []
     target_station = 214
-    target_station_index = 14 #initialize based on row of bouy_distribution.csv
+    target_station_index = 2 #initialize based on row of bouy_distribution.csv
     total_target_blocks = 0 #initialize based on bouy_distribution.csv
     sample_rate = 1.28  # Sample rate in Hz
     skip_station = False
