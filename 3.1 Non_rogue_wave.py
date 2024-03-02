@@ -145,7 +145,8 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
         print(f"Breaking out of: {station}_{deployment}")
         return non_rogue_blocks  # Return empty list or handle accordingly
 
-    hard_deck = 0
+    while_stop = 0
+    hard_deck = int(len(displacement_data)/num_samples_for_30_min) * 1000
     while len(non_rogue_blocks) < total_target_blocks:
         start_index = random.randint(0, len(displacement_data) - num_samples_for_30_min)
         end_index = start_index + num_samples_for_30_min
@@ -155,9 +156,9 @@ def process_deployment(station, deployment, start_date, end_date, total_target_b
             if len(non_rogue_blocks) == total_target_blocks:
                 break
         else:
-            hard_deck += 1
+            while_stop += 1
             #print(detect_non_rogue_wave(segment, sample_rate, sigma))
-        if hard_deck >= 10000000:
+        if while_stop >= hard_deck:
             print(f"while loop Hard Deck REACHED, Breaking out of: {station}_{deployment}")
             break
 
@@ -169,10 +170,11 @@ def main():
     #file_path = r"data\non_rogue_HB\rogue_wave_data_station_214_new"
     non_rogue_wave_data_list = []
     target_station = 214
-    target_station_index = 2 #initialize based on row of bouy_distribution.csv
+    target_station_index = 0 #initialize based on row of bouy_distribution.csv
     total_target_blocks = 0 #initialize based on bouy_distribution.csv
     sample_rate = 1.28  # Sample rate in Hz
-    skip_station = False
+    target_next_station = False
+    old_station = bouy_distribution.loc[target_station_index][0]
 
     #print(bouy_distribution.iloc[2,0])
     #print(bouy_distribution[0])
@@ -181,13 +183,23 @@ def main():
     for _, row in deployment_info.iterrows():
         station = row['Station']
         deployment = row['Deployment']
+
+        if old_station != station:
+            target_next_station = False
+            target_station_index += 1
+        
+        if target_station_index > 42:
+            print("Finished Task")
+            break
+
         target_station = bouy_distribution.loc[target_station_index][0]
         total_target_blocks = bouy_distribution.loc[target_station_index][1]
         file_path = f'data/non_rogue_HB/non_rogue_wave_data_station_{station}.parquet'
 
-        if skip_station and deployment == 1:
-            skip_station = False
-        if station == target_station and not skip_station:  # Target specific station
+        print(f"On Station: {station}_{deployment}")
+        print(f"Target Station: {target_station}")
+        
+        if station == target_station and not target_next_station:  # Target specific station
             start_date = datetime.strptime(row['Start date'], '%m-%d-%Y %H:%M')
             end_date = datetime.strptime(row['End date'], '%m-%d-%Y %H:%M')
             non_rogue_blocks = process_deployment(station, deployment, start_date, end_date, total_target_blocks, sample_rate)
@@ -208,11 +220,14 @@ def main():
 
 
             # Check if we have reached the target number of blocks
+            # Need to skip station
             if len(non_rogue_blocks) >= total_target_blocks:
-                skip_station = True
-                target_station_index += 1
+                target_next_station = True
                 print("Finished Station",station,"@",datetime.now())
                 print("End by Break")
+        else:
+            target_next_station = True
+        old_station = station
 
     print('Processing completed.')
     print(datetime.now())
