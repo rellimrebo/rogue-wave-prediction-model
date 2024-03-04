@@ -4,3 +4,5 @@
 /Rogue Wave Data
 *.ipynb
 *.parquet
+/z_ensemble.ipynb
+/Images
