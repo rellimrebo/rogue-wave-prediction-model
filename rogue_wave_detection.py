@@ -15,7 +15,8 @@ Fix spike detection
 
 Modify crest finding to exclude negative values, positive values from trough finding
 '''
-
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import netCDF4
 import numpy as np
 # import matplotlib.pyplot as plt
@@ -179,7 +180,7 @@ def detect_rogue_wave(displacement_data, sample_rate, sigma):
 # # start_date = '02-09-06 15:00' # MM/DD/YYYY HH:MM
 # qc_level = 2 # TODO
 
-stations_df = pd.read_csv('station_deployment_info.csv')
+stations_df = pd.read_csv('new_station_deployment_info.csv',dtype=str)
 
 # initialize rogue-wave storage
 rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment','SamplingRate','Segment'])
@@ -197,7 +198,7 @@ for index, row in stations_df.iloc[16:,:2].iterrows():
     # Check if the station has changed
     if last_station is not None and station != last_station:
         # Append rogue wave data to the Parquet file
-        file_name = f'rogue_wave_data_station_{last_station}.parquet'
+        file_name = f'data/Rogue Wave Data/rogue_wave_data_station_{last_station}.parquet'
         rogue_wave_data.to_parquet(file_name)
         # Clear rogue_wave_data DataFrame for the next station
         rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment', 'SamplingRate', 'Segment'])
@@ -300,6 +301,6 @@ for index, row in stations_df.iloc[16:,:2].iterrows():
     print(f"Finished processing station {station} deployment {deployment}")
     print("--- %s seconds ---" % (time.time() - start_time))
 
-file_name = f'rogue_wave_data_station_{last_station}.parquet'
+file_name = f'data/Rogue Wave Data/rogue_wave_data_station_{last_station}.parquet'
 rogue_wave_data.to_parquet(file_name)
 print('Processing completed.')
