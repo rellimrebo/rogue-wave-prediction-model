@@ -12,7 +12,7 @@ new_samples_distribution_modified.csv -> buoy_distribution_1xx.csv <br />
 zips / {New Rogue Wave Data.zip; Non Rogue Data.zip; Rogue Wave Data.zip} <br />
 models / {zensemble.py} <br />
 deprecated files / {non_rogue_wave_detection.py} <br />
-csv /{buoy_distribution_1xx.csv; buoy_distribution_mini.csv; <br />
+csv /{buoy_distribution_1xx.csv; buoy_distribution_mini.csv;
     station_deployment_info_0xx.csv; station_deployment_info_1xx.csv; station_deployment_info_mini.csv} <br />
 
 ## Deleted Files
