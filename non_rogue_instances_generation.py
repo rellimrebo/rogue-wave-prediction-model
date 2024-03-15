@@ -128,7 +128,7 @@ start_time = time.time()
 for index, row in samples_df.iterrows():
     count = 0
     station = int(row['Station'])
-    if station < 163:
+    if station > 163:
         continue
     station = row.iloc[0]
     station = f"{int(station)}"

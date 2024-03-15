@@ -1,0 +1,151 @@
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+import numpy as np
+import os
+import torch
+import pandas as pd
+import matplotlib.pyplot as plt
+import pyarrow.parquet as pq
+import datetime
+from tensorflow import keras
+from tensorflow.keras import layers
+
+from sklearn.model_selection import train_test_split
+
+# 1. Data Preprocessing
+# Assume you have wave height data stored in X_train, y_train, X_val, y_val, X_test, y_test
+def batch_split(X,batch_size,X_y_split):
+    num_batches = len(X) // batch_size
+    # X_y_split = True
+    if X_y_split:
+        data_truncated = X[:num_batches * batch_size]
+        return X[:num_batches*batch_size].reshape((batch_size, num_batches, -1))
+    # X_y_split = False
+    else:
+        return X[:num_batches*batch_size].reshape((batch_size, num_batches))
+
+
+
+def reshape_ndim(X,features):
+    new_column_2 = np.full((X.shape[0], 1), features)
+    return np.column_stack((X,new_column_2))
+
+def data_processing(X_train, y_train, X_val, y_val, X_test, y_test,features,batch_size):
+    #X_train = reshape_ndim(X_train,features)
+    #X_train = batch_split(X_train,batch_size,X_y_split=True)
+    #y_train = batch_split(y_train,batch_size,X_y_split=False)
+    X_train = np.expand_dims(X_train,axis=2)
+    y_train = y_train.astype(np.float32)
+    y_val = y_val.astype(np.float32)
+    y_test = y_test.astype(np.float32)
+    return X_train, y_train, X_val, y_val, X_test, y_test
+
+# 2. Data Augmentation
+# You can apply data augmentation techniques if necessary
+
+# 3. Model Architecture
+def create_cnn_model(input_shape):
+    model = keras.Sequential([
+        layers.Conv1D(filters=32, kernel_size=3, activation='relu', input_shape=input_shape),
+        layers.MaxPooling1D(pool_size=2),
+        layers.Flatten(),
+        layers.Dense(64, activation='relu'),
+        layers.Dense(1, activation='sigmoid')  # Output layer for binary classification
+    ])
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    return model
+
+# 4. Training
+def training(epochs, models, X_train, y_train, X_val, y_val):
+    for model in models:
+        model.fit(X_train, y_train, epochs=epochs, batch_size=32 , validation_data=(X_val,y_val))
+
+# 5. Ensembling Techniques
+# For simplicity, let's use averaging for predictions
+def ensemble_predict(models, X):
+    predictions = [model.predict(X) for model in models]
+    return np.mean(predictions, axis=0)
+
+# 6. Evaluation
+def evaluate_ensemble(models, X_test, y_test):
+    y_pred = ensemble_predict(models, X_test)
+    # Evaluate using appropriate metrics
+    # For example:
+    # accuracy = accuracy_score(y_test, y_pred)
+    # precision = precision_score(y_test, y_pred)
+    # recall = recall_score(y_test, y_pred)
+    # f1 = f1_score(y_test, y_pred)
+    # print("Accuracy:", accuracy)
+    # print("Precision:", precision)
+    # print("Recall:", recall)
+    # print("F1 Score:", f1)
+
+# 7. Fine-tuning and Iteration
+# Fine-tune models and ensemble technique as necessary
+
+# 8. Deployment
+# Once satisfied with performance, deploy the ensemble for predictions
+  
+# Specify the directory containing the Parquet files
+folder_paths = [(f"data/Rogue Wave Data", 1), (f"data/Non Rogue Data", 0)]
+
+# Initialize an empty list to store data from all files
+data_list = []
+
+for folder_path, folder_identifier in folder_paths:
+    parquet_files = [f for f in os.listdir(folder_path) if f.endswith('.parquet')]
+    # Loop through each Parquet file and append its data to the list
+    for file_name in parquet_files:
+        file_path = os.path.join(folder_path, file_name)
+        table = pq.read_table(file_path)
+        data = table.to_pandas()
+        # Add an additional column representing the folder identifier
+        data['Folder Identifier'] = folder_identifier
+        data_list.append(data)
+
+# Concatenate all data frames into a single array
+combined_data = np.concatenate(data_list, axis=0)
+
+# Print the shape of the combined array
+print("Shape of combined data array:", combined_data.shape)
+
+# Shuffle the array placements
+shuffled_data = np.copy(combined_data)
+np.random.shuffle(shuffled_data)
+
+features = 1000
+batch_size = 32
+
+desired_length = 2300
+processed_arrays = []
+for arr in shuffled_data[:,3]:
+    if len(arr) > desired_length:
+        processed_arrays.append(arr[:desired_length])  # Truncate the array
+    else:
+        padded_arr = np.pad(arr, (0, desired_length - len(arr)), mode='constant', constant_values=0)
+        processed_arrays.append(padded_arr)
+
+stacked_data_X = np.vstack(processed_arrays)
+
+
+
+
+#80-10-10 Train-Test-Val split
+X_train, X_remaining, y_train, y_remaining  = train_test_split(stacked_data_X, shuffled_data[:,4], test_size=0.2, random_state=42)
+
+
+# Split the remaining 20% equally into validation and testing (10% each)
+X_test, X_val, y_val, y_test = train_test_split(X_remaining, y_remaining, test_size=0.5, random_state=42)
+
+
+
+X_train, y_train, X_val, y_val, X_test, y_test = data_processing(X_train, y_train, X_val, y_val, X_test, y_test,features,batch_size)
+
+
+# Create multiple CNN models
+num_models = 3
+models = [create_cnn_model(input_shape=X_train.shape[1:]) for _ in range(num_models)]
+
+#Training
+epochs = 10
+training(epochs, models, X_train, y_train, X_val, y_val)
