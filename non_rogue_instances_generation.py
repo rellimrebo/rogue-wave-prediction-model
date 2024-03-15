@@ -115,7 +115,8 @@ def detect_rogue_wave(displacement_data, sample_rate, sigma):
     return None # No rogue wave detected
 
 # load data
-samples_df = pd.read_csv('samples_distribution.csv')
+samples_df = pd.read_csv('new_samples_distribution_modified.csv')
+print(samples_df)
 
 # initialize rogue-wave storage
 non_rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment','SamplingRate','Segment'])
@@ -126,12 +127,25 @@ start_time = time.time()
 # main loop
 for index, row in samples_df.iterrows():
     count = 0
+    station = int(row['Station'])
+    if station < 163:
+        continue
     station = row.iloc[0]
-    station = f"{station}"
+    station = f"{int(station)}"
     deployment = row.iloc[1]
-    deployment = f"{deployment:02}"
+    deployment = f"{int(deployment):02}"
 
     number_of_samples = row['Samples']
+
+    # Check if the station has changed
+    if last_station is not None and station != last_station:
+        # Append rogue wave data to the Parquet file
+        file_name = f'data/Non Rogue Wave Data/non_rogue_wave_data_station_{last_station}.parquet'
+        non_rogue_wave_data.to_parquet(file_name)
+        # Clear rogue_wave_data DataFrame for the next station
+        non_rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment', 'SamplingRate', 'Segment'])
+    last_station = station
+
 
     # DEBUG INPUT
     # station = '143'
@@ -146,7 +160,6 @@ for index, row in samples_df.iterrows():
 
     z_displacement = nc.variables['xyzZDisplacement'][:] # Vertical displacement
     sample_rate = nc.variables['xyzSampleRate'][:].item() # Hz
-
     # Test implementation
     block_duration = 30 # Minutes
 
@@ -181,4 +194,9 @@ for index, row in samples_df.iterrows():
     print(f"Finished processing station {station} deployment {deployment}")
     print("--- %s seconds ---" % (time.time() - start_time))
 
-non_rogue_wave_data.to_parquet('non_rogue_wave_data.parquet')
+# Append rogue wave data to the Parquet file
+file_name = f'data/Non Rogue Wave Data/non_rogue_wave_data_station_{last_station}.parquet'
+non_rogue_wave_data.to_parquet(file_name)
+# Clear rogue_wave_data DataFrame for the next station
+non_rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment', 'SamplingRate', 'Segment'])
+print('done')
