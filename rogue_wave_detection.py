@@ -180,7 +180,7 @@ def detect_rogue_wave(displacement_data, sample_rate, sigma):
 # # start_date = '02-09-06 15:00' # MM/DD/YYYY HH:MM
 # qc_level = 2 # TODO
 
-stations_df = pd.read_csv('new_station_deployment_info.csv',dtype=str)
+stations_df = pd.read_csv('csv\station_deployment_info_0xx.csv',dtype=str)
 
 # initialize rogue-wave storage
 rogue_wave_data = pd.DataFrame(columns=['Station', 'Deployment','SamplingRate','Segment'])
@@ -215,8 +215,11 @@ for index, row in stations_df.iloc[16:,:2].iterrows():
     # Turn off auto masking
     nc.set_auto_mask(False)
 
-    z_displacement = nc.variables['xyzZDisplacement'][:] # Vertical displacement
-    sample_rate = nc.variables['xyzSampleRate'][:].item() # Hz
+    try: 
+        z_displacement = nc.variables['xyzZDisplacement'][:] # Vertical displacement
+        sample_rate = nc.variables['xyzSampleRate'][:].item() # Hz
+    except:
+        continue
 
     # Test implementation
     offset = 25*60*sample_rate
