@@ -1,0 +1,134 @@
+import numpy as np
+import pandas as pd
+import glob
+import os
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import GRU, Dropout, Dense, BatchNormalization
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import LearningRateScheduler, EarlyStopping, ReduceLROnPlateau
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score
+from tensorflow.keras.layers import Masking
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+import matplotlib.pyplot as plt
+
+
+# Load data function remains unchanged
+def load_data(file_pattern):
+    all_data = pd.DataFrame()
+    for file_path in glob.glob(file_pattern):
+        station_data = pd.read_parquet(file_path)
+        station_number = os.path.basename(file_path).split('_')[4]
+        station_data['station'] = station_number
+        all_data = pd.concat([all_data, station_data], axis=0)
+    return all_data
+
+# Loading data
+all_non_rogue_wave_data = load_data('non_rogue_wave_data_station_*.parquet')
+all_rogue_wave_data = load_data('rogue_wave_data_station_*.parquet')
+all_non_rogue_wave_data['label'] = 0
+all_rogue_wave_data['label'] = 1
+
+# Combining datasets
+combined_data = pd.concat([all_non_rogue_wave_data, all_rogue_wave_data], axis=0).sample(frac=1).reset_index(drop=True)
+
+X = list(combined_data['Segment'])
+y = combined_data['label'].values
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Preprocess segments for 20-minute windows with a 1-minute warning
+def preprocess_segments(segments, labels, scaler=None, fit_scaler=False, sampling_rate=1.28, analysis_minutes=20, warning_minutes=1):
+    analysis_samples = int(analysis_minutes * 60 * sampling_rate)
+    warning_samples = int(warning_minutes * 60 * sampling_rate)
+    
+    # Initialize lists for processed segments and labels
+    processed_segments = []
+    processed_labels = []
+
+    for i, segment in enumerate(segments):
+        if len(segment) >= analysis_samples + warning_samples:
+            analysis_segment = segment[:analysis_samples]  # Extract 20-minute analysis window
+            processed_segments.append(analysis_segment)
+            
+            # Assuming `labels[i]` indicates the presence of a rogue wave in the subsequent 1-minute window
+            processed_labels.append(labels[i])
+
+    # Convert to numpy array and reshape
+    processed_segments = np.array(processed_segments, dtype=np.float32)
+    
+    if scaler is not None:
+        if fit_scaler:
+            # Reshape for scaler fitting if necessary
+            scaler.fit(processed_segments.reshape(-1, analysis_samples))
+        processed_segments = scaler.transform(processed_segments.reshape(-1, analysis_samples))
+
+    return processed_segments.reshape(-1, analysis_samples, 1), np.array(processed_labels)
+
+# Assuming `y_train` and `y_test` are correctly set up to indicate rogue wave occurrences in the 1-minute warning period following each segment.
+scaler = StandardScaler()
+X_train_scaled, y_train_processed = preprocess_segments(X_train, y_train, scaler, fit_scaler=True, sampling_rate=1.28, analysis_minutes=20, warning_minutes=1)
+X_test_scaled, y_test_processed = preprocess_segments(X_test, y_test, scaler, sampling_rate=1.28, analysis_minutes=20, warning_minutes=1)
+
+
+gru_model = Sequential([
+    GRU(128, return_sequences=True, input_shape=(X_train_scaled.shape[1], X_train_scaled.shape[2]), kernel_regularizer='l2'),
+    BatchNormalization(),
+    Dropout(0.3),
+    GRU(64, kernel_regularizer='l2'),
+    BatchNormalization(),
+    Dropout(0.3),
+    Dense(64, activation='relu'),
+    Dropout(0.3),
+    Dense(1, activation='sigmoid')
+])
+
+gru_model.compile(optimizer=Adam(learning_rate=0.001), loss='binary_crossentropy', metrics=['accuracy'])
+
+
+# Train the model with processed labels
+history = gru_model.fit(
+    X_train_scaled, y_train_processed, 
+    epochs=100, 
+    batch_size=64, 
+    validation_data=(X_test_scaled, y_test_processed),
+    callbacks=[
+        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.0001)
+    ]
+)
+# Plot training & validation accuracy values
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Train')
+plt.plot(history.history['val_accuracy'], label='Validation')
+plt.title('Model Accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(loc='upper left')
+
+# Plot training & validation loss values
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Train')
+plt.plot(history.history['val_loss'], label='Validation')
+plt.title('Model Loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(loc='upper right')
+
+plt.tight_layout()
+plt.show()
+
+# Predict on test data with the correctly named model variable
+y_pred_prob = gru_model.predict(X_test_scaled)
+
+# Convert probabilities to binary predictions
+y_pred = np.where(y_pred_prob >= 0.5, 1, 0)
+
+# Generate and visualize the confusion matrix
+cm = confusion_matrix(y_test_processed, y_pred)
+ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1]).plot(cmap='Blues')
+plt.title('Confusion Matrix')
+plt.show()
